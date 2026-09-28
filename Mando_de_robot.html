@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>ESP32 Coche · Control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #14161a;
+    --panel: #1b1e24;
+    --panel-2: #21252c;
+    --line: #2c313a;
+    --amber: #ffb020;
+    --amber-dim: #7a5a1f;
+    --green: #4ade80;
+    --red: #e5484d;
+    --text: #edeef0;
+    --muted: #8b9099;
+  }
+  *{ box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html,body{
+    margin:0; padding:0; height:100%;
+    background: radial-gradient(120% 140% at 50% -10%, #1c2029 0%, var(--bg) 55%);
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    overflow-x: hidden;
+  }
+  .display{ font-family: 'Rajdhani', sans-serif; }
+
+  .wrap{
+    max-width: 460px;
+    margin: 0 auto;
+    padding: 18px 16px 40px;
+    min-height: 100%;
+  }
+
+  /* ---- Header ---- */
+  header{
+    display:flex; align-items:center; justify-content:space-between;
+    padding-bottom: 14px; margin-bottom: 16px;
+    border-bottom: 1px solid var(--line);
+    position: relative;
+  }
+  .title{
+    font-family:'Rajdhani', sans-serif; font-weight:700; letter-spacing:0.06em;
+    font-size: 22px; text-transform: uppercase; color: var(--text);
+    display:flex; flex-direction:column; line-height:1.05;
+  }
+  .title small{
+    font-family:'Space Mono', monospace; font-weight:400; letter-spacing:0.14em;
+    font-size:10px; color: var(--muted); text-transform:none; margin-top:3px;
+  }
+  .radar{
+    position:absolute; right: 108px; top: -6px;
+    width:64px; height:64px; opacity:0.5; pointer-events:none;
+  }
+  #connectBtn{
+    font-family:'Rajdhani', sans-serif; font-weight:700; letter-spacing:0.04em;
+    font-size:13px; text-transform:uppercase;
+    background: var(--panel-2); color: var(--text);
+    border:1px solid var(--line); border-radius:8px;
+    padding:9px 14px; cursor:pointer;
+    display:flex; align-items:center; gap:8px;
+    transition: border-color .15s, color .15s;
+  }
+  #connectBtn:active{ transform: translateY(1px); }
+  #connectBtn.connected{ border-color: var(--green); color: var(--green); }
+  #connectBtn .dot{
+    width:8px; height:8px; border-radius:50%;
+    background: var(--red); flex-shrink:0;
+    box-shadow: 0 0 0 0 rgba(229,72,77,.5);
+  }
+  #connectBtn.connected .dot{
+    background: var(--green);
+    animation: pulse 1.8s infinite;
+  }
+  @keyframes pulse{
+    0%{ box-shadow: 0 0 0 0 rgba(74,222,128,.45); }
+    70%{ box-shadow: 0 0 0 7px rgba(74,222,128,0); }
+    100%{ box-shadow: 0 0 0 0 rgba(74,222,128,0); }
+  }
+
+  /* ---- Status strip ---- */
+  .status{
+    display:grid; grid-template-columns: 1fr 1fr 1fr; gap:10px;
+    margin-bottom: 18px;
+  }
+  .status .cell{
+    background: var(--panel); border:1px solid var(--line); border-radius:10px;
+    padding:10px 12px;
+  }
+  .status .cell .k{
+    font-size:9px; letter-spacing:0.12em; color: var(--muted); text-transform:uppercase;
+  }
+  .status .cell .v{
+    font-family:'Rajdhani', sans-serif; font-weight:700; font-size:17px; margin-top:3px;
+    color: var(--text);
+  }
+  .status .cell .v.amber{ color: var(--amber); }
+  .status .cell .v.red{ color: var(--red); }
+
+  /* ---- Panel ---- */
+  .panel{
+    background: var(--panel); border:1px solid var(--line); border-radius:14px;
+    padding:16px; margin-bottom:16px;
+  }
+  .panel h2{
+    margin:0 0 12px; font-family:'Rajdhani', sans-serif; font-size:12px;
+    letter-spacing:0.14em; text-transform:uppercase; color: var(--muted); font-weight:600;
+  }
+
+  /* ---- Speed ---- */
+  .speed-row{ display:flex; align-items:center; gap:14px; }
+  .speed-readout{
+    font-family:'Rajdhani', sans-serif; font-weight:700; font-size:30px;
+    color: var(--amber); min-width: 58px; text-align:right; font-variant-numeric: tabular-nums;
+  }
+  .speed-track-wrap{ flex:1; position:relative; height:34px; display:flex; align-items:center; }
+  input[type=range]{
+    -webkit-appearance:none; appearance:none; width:100%; height:10px;
+    background: linear-gradient(90deg, var(--amber-dim), var(--amber) var(--fill,60%), var(--line) var(--fill,60%));
+    border-radius: 6px; outline:none; margin:0;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:24px; height:24px; border-radius:50%;
+    background: var(--amber); border:3px solid #14161a; cursor:pointer;
+    box-shadow: 0 0 0 1px var(--amber);
+  }
+  input[type=range]::-moz-range-thumb{
+    width:24px; height:24px; border-radius:50%; border:3px solid #14161a;
+    background: var(--amber); cursor:pointer; box-shadow: 0 0 0 1px var(--amber);
+  }
+
+  /* ---- D-pad ---- */
+  .dpad{
+    display:grid;
+    grid-template-columns: 74px 74px 74px;
+    grid-template-rows: 74px 74px 74px;
+    gap:10px;
+    justify-content:center;
+    margin: 6px auto 4px;
+  }
+  .dbtn{
+    display:flex; align-items:center; justify-content:center;
+    background: var(--panel-2); border:1px solid var(--line); border-radius:14px;
+    color: var(--text); cursor:pointer;
+    transition: background .1s, border-color .1s, transform .05s;
+  }
+  .dbtn svg{ width:28px; height:28px; fill: var(--text); }
+  .dbtn.up{ grid-column:2; grid-row:1; }
+  .dbtn.left{ grid-column:1; grid-row:2; }
+  .dbtn.right{ grid-column:3; grid-row:2; }
+  .dbtn.down{ grid-column:2; grid-row:3; }
+  .dpad-center{
+    grid-column:2; grid-row:2;
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Rajdhani',sans-serif; font-size:10px; letter-spacing:0.1em;
+    color: var(--muted); text-transform:uppercase; text-align:center;
+    border:1px dashed var(--line); border-radius:14px;
+  }
+  .dbtn.active{
+    background: var(--amber); border-color: var(--amber);
+    transform: scale(0.95);
+  }
+  .dbtn.active svg{ fill:#14161a; }
+  .dbtn.held{
+    background: #3a2a10; border-color: var(--amber);
+  }
+
+  /* ---- Bottom controls ---- */
+  .row2{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px; }
+  button.action{
+    font-family:'Rajdhani', sans-serif; font-weight:700; letter-spacing:0.05em;
+    text-transform:uppercase; font-size:14px;
+    border-radius:10px; border:1px solid var(--line);
+    padding:14px 10px; cursor:pointer; background: var(--panel-2); color: var(--text);
+    transition: background .12s, border-color .12s, color .12s;
+  }
+  button.action:active{ transform: translateY(1px); }
+  #holdBtn.active{ background:#3a2a10; border-color: var(--amber); color: var(--amber); }
+  #stopBtn{ background: #3a1618; border-color: var(--red); color: var(--red); }
+  #stopBtn:active{ background: var(--red); color:#14161a; }
+  #followBtn{
+    width:100%; padding:16px 10px; font-size:15px;
+    background: var(--panel-2); border:1px solid var(--line); color:var(--text);
+  }
+  #followBtn.active{ background: var(--amber); border-color: var(--amber); color:#14161a; }
+
+  .hint{ font-size:10px; color: var(--muted); line-height:1.5; margin-top:10px; text-align:center; }
+  .hint b{ color: var(--text); }
+
+  .unsupported{
+    display:none; background:#3a1618; border:1px solid var(--red); color:#ffd3d4;
+    border-radius:10px; padding:12px 14px; font-size:12px; line-height:1.5; margin-bottom:16px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <svg class="radar" viewBox="0 0 100 100">
+      <circle cx="50" cy="50" r="46" fill="none" stroke="var(--line)" stroke-width="1"/>
+      <circle cx="50" cy="50" r="30" fill="none" stroke="var(--line)" stroke-width="1"/>
+      <circle cx="50" cy="50" r="14" fill="none" stroke="var(--line)" stroke-width="1"/>
+      <line x1="50" y1="50" x2="96" y2="50" stroke="var(--line)" stroke-width="1"/>
+      <g id="radarSweep" style="transform-origin:50px 50px;">
+        <path d="M50 50 L96 50 A46 46 0 0 1 82.5 81.5 Z" fill="var(--amber)" opacity="0.28"/>
+      </g>
+    </svg>
+    <div class="title">ESP32<small>PANEL&nbsp;DE&nbsp;CONTROL&nbsp;·&nbsp;COCHE</small></div>
+    <button id="connectBtn"><span class="dot"></span><span id="connectLabel">Conectar</span></button>
+  </header>
+
+  <div class="unsupported" id="unsupportedMsg">
+    Este navegador no soporta Web Bluetooth. Usa <b>Chrome</b> o <b>Edge</b> en Android o en un ordenador (en iPhone/iPad no está disponible).
+  </div>
+
+  <div class="status">
+    <div class="cell"><div class="k">Modo</div><div class="v amber" id="statMode">--</div></div>
+    <div class="cell"><div class="k">Distancia</div><div class="v" id="statDist">-- cm</div></div>
+    <div class="cell"><div class="k">Estado</div><div class="v" id="statMoving">--</div></div>
+  </div>
+
+  <div class="panel">
+    <h2>Velocidad</h2>
+    <div class="speed-row">
+      <div class="speed-track-wrap">
+        <input type="range" id="speed" min="60" max="255" value="180" step="1">
+      </div>
+      <div class="speed-readout" id="speedReadout">180</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Conducción manual</h2>
+    <div class="dpad">
+      <div class="dbtn up" data-dir="F"><svg viewBox="0 0 24 24"><path d="M12 4l8 10h-5v6h-6v-6H4z"/></svg></div>
+      <div class="dbtn left" data-dir="L"><svg viewBox="0 0 24 24"><path d="M4 12l10-8v5h6v6h-6v5z"/></svg></div>
+      <div class="dpad-center"><button class="action" id="stopBtn">Stop</button></div>
+      <div class="dbtn right" data-dir="R"><svg viewBox="0 0 24 24"><path d="M20 12L10 4v5H4v6h6v5z"/></svg></div>
+      <div class="dbtn down" data-dir="B"><svg viewBox="0 0 24 24"><path d="M12 20l-8-10h5V4h6v6h5z"/></svg></div>
+    </div>
+    <div class="row2">
+      <button class="action" id="holdBtn">Mantener: OFF</button>
+      <button class="action" id="followBtn">Seguir objeto</button>
+    </div>
+    
+  </div>
+  
+</div>
+
+<script>
+(() => {
+  const SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+  const RX_UUID       = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // móvil -> ESP32
+  const TX_UUID       = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // ESP32 -> móvil
+  const DEVICE_NAME   = 'ESP32-COCHE';
+  const WATCHDOG_MS   = 300; // < 800ms de timeout del firmware
+
+  let device = null, server = null, rxChar = null, txChar = null;
+  let connected = false;
+  let holdMode = false;
+  let activeDir = null;      // dirección actualmente en marcha ('F','B','L','R') o null
+  let activeSticky = false;  // true si esa dirección quedó "pegada" por Mantener
+  let repeatTimer = null;
+
+  const $ = (id) => document.getElementById(id);
+  const connectBtn = $('connectBtn'), connectLabel = $('connectLabel');
+  const holdBtn = $('holdBtn'), holdStateEl = $('holdState'), stopBtn = $('stopBtn');
+  const followBtn = $('followBtn');
+  const speedInput = $('speed'), speedReadout = $('speedReadout');
+  const statMode = $('statMode'), statDist = $('statDist'), statMoving = $('statMoving');
+  const radarSweep = $('radarSweep');
+
+  if (!navigator.bluetooth) {
+    $('unsupportedMsg').style.display = 'block';
+  }
+
+  // ---- Radar decorativo (solo estético, sin datos reales) ----
+  let sweepAngle = 0, sweepDir = 1;
+  setInterval(() => {
+    sweepAngle += sweepDir * 2;
+    if (sweepAngle > 60 || sweepAngle < -60) sweepDir *= -1;
+    radarSweep.style.transform = `rotate(${sweepAngle}deg)`;
+  }, 40);
+
+  // ---- Conexión BLE ----
+  async function toggleConnect() {
+    if (connected) { disconnect(); return; }
+    try {
+      device = await navigator.bluetooth.requestDevice({
+        filters: [{ name: DEVICE_NAME }],
+        optionalServices: [SERVICE_UUID]
+      });
+      device.addEventListener('gattserverdisconnected', onDisconnected);
+      server = await device.gatt.connect();
+      const service = await server.getPrimaryService(SERVICE_UUID);
+      rxChar = await service.getCharacteristic(RX_UUID);
+      txChar = await service.getCharacteristic(TX_UUID);
+      await txChar.startNotifications();
+      txChar.addEventListener('characteristicvaluechanged', onNotify);
+
+      connected = true;
+      connectBtn.classList.add('connected');
+      connectLabel.textContent = 'Conectado';
+      sendCommand('V' + speedInput.value);
+    } catch (err) {
+      console.error(err);
+      connected = false;
+    }
+  }
+
+  function disconnect() {
+    if (device && device.gatt.connected) device.gatt.disconnect();
+    onDisconnected();
+  }
+
+  function onDisconnected() {
+    connected = false;
+    connectBtn.classList.remove('connected');
+    connectLabel.textContent = 'Conectar';
+    statMode.textContent = '--';
+    statMoving.textContent = '--';
+    clearRepeat();
+    activeDir = null; activeSticky = false;
+    document.querySelectorAll('.dbtn').forEach(b => b.classList.remove('active','held'));
+  }
+
+  function onNotify(event) {
+    const text = new TextDecoder().decode(event.target.value);
+    if (text.startsWith('MODE:')) {
+      const m = text.slice(5);
+      statMode.textContent = m;
+      followBtn.classList.toggle('active', m === 'SEGUIR');
+      followBtn.textContent = m === 'SEGUIR' ? 'Siguiendo… (toca para salir)' : 'Seguir objeto';
+    } else if (text.startsWith('MOVING:')) {
+      statMoving.textContent = text.slice(7);
+    } else if (text.startsWith('DIST:')) {
+      statDist.textContent = text.slice(5) + ' cm';
+    } else if (text === 'OBSTACLE') {
+      statMoving.textContent = 'OBSTÁCULO';
+    }
+  }
+
+  // ---- Envío de comandos ----
+  async function sendCommand(cmd) {
+    if (!connected || !rxChar) return;
+    try {
+      const data = new TextEncoder().encode(cmd);
+      await rxChar.writeValue(data);
+    } catch (err) {
+      console.error('Error enviando comando', cmd, err);
+    }
+  }
+
+  // ---- Velocidad ----
+  function updateSpeedFill() {
+    const min = +speedInput.min, max = +speedInput.max, val = +speedInput.value;
+    const pct = ((val - min) / (max - min)) * 100;
+    speedInput.style.setProperty('--fill', pct + '%');
+    speedReadout.textContent = val;
+  }
+  let lastSpeedSend = 0;
+  speedInput.addEventListener('input', () => {
+    updateSpeedFill();
+    const now = Date.now();
+    if (now - lastSpeedSend > 150) { lastSpeedSend = now; sendCommand('V' + speedInput.value); }
+  });
+  speedInput.addEventListener('change', () => sendCommand('V' + speedInput.value));
+  updateSpeedFill();
+
+  // ---- Movimiento (flechas) ----
+  function clearRepeat() {
+    if (repeatTimer) { clearInterval(repeatTimer); repeatTimer = null; }
+  }
+
+  function startDirection(dir, sticky) {
+    // Nos aseguramos de estar en modo manual antes de mover (es inofensivo
+    // repetirlo si ya lo estamos).
+    clearRepeat();
+    document.querySelectorAll('.dbtn').forEach(b => b.classList.remove('active','held'));
+    const btn = document.querySelector(`.dbtn[data-dir="${dir}"]`);
+    if (btn) btn.classList.add(sticky ? 'held' : 'active');
+
+    activeDir = dir;
+    activeSticky = sticky;
+    sendCommand('M');
+    sendCommand(dir);
+    repeatTimer = setInterval(() => sendCommand(dir), WATCHDOG_MS);
+  }
+
+  function stopDirection() {
+    clearRepeat();
+    document.querySelectorAll('.dbtn').forEach(b => b.classList.remove('active','held'));
+    activeDir = null;
+    activeSticky = false;
+    sendCommand('S');
+  }
+
+  document.querySelectorAll('.dbtn[data-dir]').forEach(btn => {
+    const dir = btn.dataset.dir;
+
+    // Modo NORMAL: press-and-hold (pointerdown/up)
+    btn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      if (holdMode) {
+        // Un toque en modo Mantener deja la dirección fija.
+        startDirection(dir, true);
+      } else {
+        startDirection(dir, false);
+      }
+    });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => {
+      btn.addEventListener(ev, () => {
+        if (!holdMode && activeDir === dir && !activeSticky) stopDirection();
+      });
+    });
+  });
+
+  // ---- Teclado (flechas del teclado) ----
+  const KEY_DIR = { ArrowUp:'F', ArrowDown:'B', ArrowLeft:'L', ArrowRight:'R' };
+  document.addEventListener('keydown', (e) => {
+    const dir = KEY_DIR[e.key];
+    if (!dir || e.repeat) return;
+    e.preventDefault();
+    startDirection(dir, holdMode);
+  });
+  document.addEventListener('keyup', (e) => {
+    const dir = KEY_DIR[e.key];
+    if (!dir) return;
+    if (!holdMode && activeDir === dir && !activeSticky) stopDirection();
+  });
+
+  // ---- Mantener ----
+  holdBtn.addEventListener('click', () => {
+    holdMode = !holdMode;
+    holdBtn.classList.toggle('active', holdMode);
+    holdBtn.textContent = 'Mantener: ' + (holdMode ? 'ON' : 'OFF');
+    holdStateEl.textContent = holdMode ? 'ON' : 'OFF';
+  });
+
+  // ---- Stop ----
+  stopBtn.addEventListener('click', stopDirection);
+
+  // ---- Seguir ----
+  followBtn.addEventListener('click', () => {
+    if (statMode.textContent === 'SEGUIR') {
+      sendCommand('M');
+    } else {
+      clearRepeat();
+      activeDir = null; activeSticky = false;
+      document.querySelectorAll('.dbtn').forEach(b => b.classList.remove('active','held'));
+      sendCommand('A');
+    }
+  });
+
+  connectBtn.addEventListener('click', toggleConnect);
+})();
+</script>
+</body>
+</html>
